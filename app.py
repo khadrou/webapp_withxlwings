@@ -1,10 +1,15 @@
-from flask import Flask, jsonify, request
+from typing import Annotated
 import xlwings as xw
 import numpy as np
-import os 
+import os
+
 os.environ["XLWINGS_LICENSE_KEY"]="eyJwcm9kdWN0cyI6IFsicHJvIiwgInJlcG9ydHMiXSwgInZhbGlkX3VudGlsIjogIjIwMjQtMDgtMTciLCAibGljZW5zZV90eXBlIjogInRyaWFsIn0=9e0ab"
 
-app = Flask(__name__)
+from fastapi import Depends, FastAPI, status
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import PlainTextResponse
+
+app = FastAPI()
 
 class Pipe:
     def __init__(self, diameter, length, fluid_density, fluid_viscosity, singularities):
@@ -57,51 +62,69 @@ class PipeNetwork:
 def index():
     return 'Serveur calcul 2024 merciii'
 
-@app.post('/calculate_total_pressure_drop')
-def calculate_total_pressure_drop():
+def get_book(body: dict):
+    book = xw.Book(json=body)
+    try:
+        yield book
+    finally:
+        book.close()
+
+Book = Annotated[xw.Book, Depends(get_book)]
+
+@app.post("/calculate_total_pressure_drop")
+async def calculate_total_pressure_drop(book: Book):
     try:
         print('running')
-        print(request.json)
-        with xw.Book(json=request.json) as book:
-            sht_input = book.sheets[0]
-            print('===>', sht_input['A1'].value)
+        print(book.json)
+        sht_input = book.sheets[0]
+        print('===>', sht_input['A1'].value)
 
-            pipe1_diameter_cell = sht_input.range('B1')
-            pipe1_length_cell = sht_input.range('B2')
-            pipe1_fluid_density_cell = sht_input.range('B3')
-            pipe1_fluid_viscosity_cell = sht_input.range('B4')
-            pipe1_singularities_cell = sht_input.range('B5')
-            pipe1_singularities = [sing.strip() for sing in pipe1_singularities_cell.value.split(',')]
+        pipe1_diameter_cell = sht_input.range('B1')
+        pipe1_length_cell = sht_input.range('B2')
+        pipe1_fluid_density_cell = sht_input.range('B3')
+        pipe1_fluid_viscosity_cell = sht_input.range('B4')
+        pipe1_singularities_cell = sht_input.range('B5')
+        pipe1_singularities = [sing.strip() for sing in pipe1_singularities_cell.value.split(',')]
 
-            pipe2_diameter_cell = sht_input.range('C1')
-            pipe2_length_cell = sht_input.range('C2')
-            pipe2_fluid_density_cell = sht_input.range('C3')
-            pipe2_fluid_viscosity_cell = sht_input.range('C4')
-            pipe2_singularities_cell = sht_input.range('C5')
-            pipe2_singularities = [sing.strip() for sing in pipe2_singularities_cell.value.split(',')]
+        pipe2_diameter_cell = sht_input.range('C1')
+        pipe2_length_cell = sht_input.range('C2')
+        pipe2_fluid_density_cell = sht_input.range('C3')
+        pipe2_fluid_viscosity_cell = sht_input.range('C4')
+        pipe2_singularities_cell = sht_input.range('C5')
+        pipe2_singularities = [sing.strip() for sing in pipe2_singularities_cell.value.split(',')]
 
-            pipe3_diameter_cell = sht_input.range('D1')
-            pipe3_length_cell = sht_input.range('D2')
-            pipe3_fluid_density_cell = sht_input.range('D3')
-            pipe3_fluid_viscosity_cell = sht_input.range('D4')
-            pipe3_singularities_cell = sht_input.range('D5')
-            pipe3_singularities = [sing.strip() for sing in pipe3_singularities_cell.value.split(',')]
+        pipe3_diameter_cell = sht_input.range('D1')
+        pipe3_length_cell = sht_input.range('D2')
+        pipe3_fluid_density_cell = sht_input.range('D3')
+        pipe3_fluid_viscosity_cell = sht_input.range('D4')
+        pipe3_singularities_cell = sht_input.range('D5')
+        pipe3_singularities = [sing.strip() for sing in pipe3_singularities_cell.value.split(',')]
 
-            pipe1 = Pipe(pipe1_diameter_cell.value, pipe1_length_cell.value, pipe1_fluid_density_cell.value, pipe1_fluid_viscosity_cell.value, pipe1_singularities)
-            pipe2 = Pipe(pipe2_diameter_cell.value, pipe2_length_cell.value, pipe2_fluid_density_cell.value, pipe2_fluid_viscosity_cell.value, pipe2_singularities)
-            pipe3 = Pipe(pipe3_diameter_cell.value, pipe3_length_cell.value, pipe3_fluid_density_cell.value, pipe3_fluid_viscosity_cell.value, pipe3_singularities)
+        pipe1 = Pipe(pipe1_diameter_cell.value, pipe1_length_cell.value, pipe1_fluid_density_cell.value, pipe1_fluid_viscosity_cell.value, pipe1_singularities)
+        pipe2 = Pipe(pipe2_diameter_cell.value, pipe2_length_cell.value, pipe2_fluid_density_cell.value, pipe2_fluid_viscosity_cell.value, pipe2_singularities)
+        pipe3 = Pipe(pipe3_diameter_cell.value, pipe3_length_cell.value, pipe3_fluid_density_cell.value, pipe3_fluid_viscosity_cell.value, pipe3_singularities)
 
-            pipe_network = PipeNetwork([pipe1, pipe2, pipe3])
+        pipe_network = PipeNetwork([pipe1, pipe2, pipe3])
 
-            total_pressure_drop = pipe_network.calculate_total_pressure_drop()
-            print(total_pressure_drop)
-            sht_input["E7"].value = total_pressure_drop
-            sht_input["A7"].value = "Done !!"
- 
-            return book.json()
+        total_pressure_drop = pipe_network.calculate_total_pressure_drop()
+        print(total_pressure_drop)
+        sht_input["E7"].value = total_pressure_drop
+        sht_input["A7"].value = "Done !!"
+
+        return book.json()
     except Exception as e:
         print('Error: ', e)
-        return jsonify({'actions': 0})
-        print(total_pressure_drop)
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5500, debug=True)
+        return PlainTextResponse(str(e), status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+cors_app = CORSMiddleware(
+    app=app,
+    allow_origins="*",
+    allow_methods=["POST"],
+    allow_headers=["*"],
+    allow_credentials=True,
+)
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run("app:cors_app", host="127.0.0.1", port=5500, reload=True)
